@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>监控系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #000000;
+            text-align: center;
+            padding: 50px;
+        }
+        h1 {
+            color: #ffffff;
+        }
+        .video-container {
+            margin: 20px auto;
+            width: 80%;
+            max-width: 640px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background-color: #fff;
+        }
+        img {
+            width: 100%;
+            height: auto;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>实时监控</h1>
+    <div class="video-container">
+        <img src="{{ url_for('video_feed') }}">
+    </div>
+    <a href="/logout" class="button">登出</a>
+</body>
+</html>
