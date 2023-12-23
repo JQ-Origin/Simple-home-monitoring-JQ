@@ -1,17 +1,26 @@
-from flask import Flask, render_template, Response, request, session, redirect, url_for
+# app.py
+
 import cv2
 import threading
 import datetime
-import secrets
-import config  # 导入配置
+from queue import Queue
+import time
+import config
 
-app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)
-
-# 初始化摄像头
+camera_lock = threading.Lock()
+frame_queue = Queue(maxsize=10)
+is_recording = True
 camera = cv2.VideoCapture(0)
+
+# 设置摄像头的分辨率
 camera.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_RESOLUTION[0])
 camera.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_RESOLUTION[1])
+
+out = None
+
+last_frame_time = 0
+frame_counter = 0
+fps = 0
 
 def get_video_writer():
     now = datetime.datetime.now()
@@ -19,68 +28,71 @@ def get_video_writer():
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     return cv2.VideoWriter(filename, fourcc, 20.0, config.CAMERA_RESOLUTION)
 
-out = get_video_writer()
+def put_timestamp_and_framerate(frame, fps):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    cv2.putText(frame, timestamp, (10, 30), font, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"{fps:.2f} FPS", (frame.shape[1] - 100, 30), font, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+    return frame
 
-is_recording = True
+def calculate_fps():
+    global last_frame_time, frame_counter, fps
+    current_time = time.time()
+    if last_frame_time != 0:
+        time_diff = current_time - last_frame_time
+        instant_fps = 1 / time_diff if time_diff > 0 else 0
+        fps = (fps * frame_counter + instant_fps) / (frame_counter + 1)
+        frame_counter += 1
+    last_frame_time = current_time
+    return fps
+
+def capture_frames():
+    global camera, last_frame_time
+    while True:
+        with camera_lock:
+            success, frame = camera.read()
+            if not success:
+                break
+            calculate_fps()  # 更新实时帧率
+            frame_queue.put(frame)
 
 def record_video():
-    global is_recording, camera, out
+    global is_recording, out
     last_date = datetime.datetime.now().date()
     while is_recording:
-        ret, frame = camera.read()
-        if ret:
-            out.write(frame)
-        current_date = datetime.datetime.now().date()
-        if current_date > last_date:
-            out.release()
-            out = get_video_writer()
-            last_date = current_date
-
-threading.Thread(target=record_video).start()
+        if not frame_queue.empty():
+            frame = frame_queue.get()
+            frame_with_timestamp = put_timestamp_and_framerate(frame, fps)
+            out.write(frame_with_timestamp)
+            current_date = datetime.datetime.now().date()
+            if current_date > last_date:
+                out.release()
+                out = get_video_writer()
+                last_date = current_date
 
 def gen_frames():
-    global camera
     while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        else:
-            ret, buffer = cv2.imencode('.jpg', frame)
+        if not frame_queue.empty():
+            frame = frame_queue.get()
+            frame_with_timestamp = put_timestamp_and_framerate(frame, fps)
+            ret, buffer = cv2.imencode('.jpg', frame_with_timestamp)
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-@app.route('/')
-def index():
-    if not session.get('logged_in'):
-        return render_template('not_logged_in.html')
-    return render_template('index.html')
+def start_camera_thread():
+    threading.Thread(target=capture_frames, daemon=True).start()
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+def start_record_thread():
+    global is_recording, out
+    out = get_video_writer()
+    threading.Thread(target=record_video, daemon=True).start()
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if username == config.USERNAME and password == config.PASSWORD:
-            session['logged_in'] = True
-            return redirect(url_for('index'))
-        else:
-            return render_template('login.html', error='无效的用户名或密码')
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('login'))  # 重定向到登录页面
-
-if __name__ == '__main__':
-    try:
-        app.run(host='0.0.0.0', port=12971)
-    finally:
-        is_recording = False
+def stop_recording():
+    global is_recording, camera, out
+    is_recording = False
+    with camera_lock:
         camera.release()
+    if out is not None:
         out.release()

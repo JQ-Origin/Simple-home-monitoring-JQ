@@ -8,3 +8,7 @@ VIDEO_SAVE_PATH = 'video_data/'
 
 # 摄像头设置
 CAMERA_RESOLUTION = (640, 480)  # 宽度和高度
+
+#服务端口
+SERVER_PORT = 12971
+

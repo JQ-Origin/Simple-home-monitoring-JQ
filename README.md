@@ -23,7 +23,7 @@
     cd Simple-home-monitoring-JQ
 运行以下命令来启动应用：
 
-    python app.py
+    python server.py
 在浏览器中访问 http://<服务器地址>:<端口号(默认12971)> 来查看应用。
 
 ## 配置
@@ -32,6 +32,7 @@
 + USERNAME 和 PASSWORD: 登录凭据。
 + VIDEO_SAVE_PATH: 视频保存路径。
 + CAMERA_RESOLUTION: 摄像头分辨率。
++ SERVER_PORT: 服务端口
 确保根据您的环境和需求调整这些设置。
 
 # 安全性和隐私
